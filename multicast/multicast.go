@@ -9,11 +9,10 @@ import (
 type Multicast struct {
 	types.Receiver
 
-	in  chan types.DirectedMessage
-	out map[types.ChanName]chan types.Message
+	out map[types.ChanName]chan interface{}
 }
 
-func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}, to map[types.ChanName]chan types.Message) *Multicast {
+func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}, to map[types.ChanName]chan interface{}) *Multicast {
 	if len(to) < 1 {
 		return nil
 	}
@@ -45,7 +44,7 @@ func (m *Multicast) onMessage(data interface{}) {
 		if ch, ok := m.out[name]; ok {
 			ch <- msg
 		} else {
-			m.SendError(fmt.Errorf("channel \"%m\" not found (message was: %#v)", name, msg))
+			m.SendError(fmt.Errorf("channel \"%s\" not found (message was: %#v)", name, msg))
 		}
 	}
 }
@@ -55,5 +54,20 @@ func (m *Multicast) Close() {
 
 	for _, ch := range m.out {
 		close(ch)
+	}
+}
+
+func (m *Multicast) AppendListeners(listeners map[types.ChanName]chan interface{}) {
+	if m.IsStarted {
+		m.Stop()
+		defer m.Start()
+	}
+
+	for name, ch := range listeners {
+		if _, ok := m.out[name]; ok {
+			m.SendError(fmt.Errorf("channel \"%s\" already exists", name))
+			continue
+		}
+		m.out[name] = ch
 	}
 }

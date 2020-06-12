@@ -43,3 +43,12 @@ func (b *Broadcast) Close() {
 		close(ch)
 	}
 }
+
+func (b *Broadcast) AppendListeners(listeners ...chan interface{}) {
+	if b.IsStarted {
+		b.Stop()
+		defer b.Start()
+	}
+
+	b.out = append(b.out, listeners...)
+}

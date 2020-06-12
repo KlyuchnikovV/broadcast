@@ -12,7 +12,7 @@ type Receiver struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	onMessage func(interface{})
-	isStarted bool
+	IsStarted bool
 
 	in chan interface{}
 }
@@ -27,7 +27,7 @@ func NewReceiver(ctx context.Context, errChan *ErrorChannel, from chan interface
 }
 
 func (r *Receiver) Start() {
-	if r.isStarted {
+	if r.IsStarted {
 		r.SendError(fmt.Errorf("\"%T\" already started", *r))
 		return
 	}
@@ -35,7 +35,7 @@ func (r *Receiver) Start() {
 	ctx, cancel := context.WithCancel(r.ctx)
 	r.ctx = ctx
 	r.cancel = cancel
-	r.isStarted = true
+	r.IsStarted = true
 
 	go func() {
 		defer func() {
@@ -64,7 +64,7 @@ func (r *Receiver) Start() {
 }
 
 func (r *Receiver) Stop() {
-	if !r.isStarted {
+	if !r.IsStarted {
 		r.SendError(fmt.Errorf("\"%T\" already stopped", *r))
 		return
 	}
@@ -72,7 +72,7 @@ func (r *Receiver) Stop() {
 }
 
 func (r *Receiver) Close() {
-	if r.isStarted {
+	if r.IsStarted {
 		r.Stop()
 	}
 	close(r.in)
