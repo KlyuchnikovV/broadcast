@@ -77,3 +77,13 @@ func (r *Receiver) Close() {
 	}
 	close(r.in)
 }
+
+func (r *Receiver) Send(data interface{}) {
+	defer func() {
+		if err := recover(); err != nil {
+			r.SendError(err.(error))
+		}
+	}()
+
+	r.in <- data
+}
