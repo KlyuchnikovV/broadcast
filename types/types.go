@@ -4,10 +4,7 @@ import "sync"
 
 type ChanName string
 
-type Message interface{}
-
 type DirectedMessage interface {
-	Message
 	GetNames() []ChanName
 }
 
