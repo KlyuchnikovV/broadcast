@@ -3,13 +3,12 @@ package multicast
 import (
 	"context"
 	"fmt"
+
 	"github.com/KlyuchnikovV/broadcast/types"
 )
 
 type Multicast struct {
-	types.Receiver
-
-	out map[types.ChanName]chan interface{}
+	types.Redirect
 }
 
 func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}, to map[types.ChanName]chan interface{}) *Multicast {
@@ -17,9 +16,9 @@ func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}
 		return nil
 	}
 
-	m := &Multicast{out: to}
+	m := new(Multicast)
 
-	m.Receiver = *types.NewReceiver(ctx, errChan, from, m.onMessage)
+	m.Redirect = *types.NewRedirect(ctx, errChan, from, to, m.onMessage)
 
 	return m
 }
@@ -31,43 +30,22 @@ func (m *Multicast) onMessage(data interface{}) {
 		return
 	}
 
+	out := m.OutputChan()
+
 	names := msg.GetNames()
 	if len(names) == 0 {
 		// No names provided -> sending to all
-		for _, ch := range m.out {
+		for _, ch := range out {
 			ch <- msg
 		}
 		return
 	}
 
 	for _, name := range names {
-		if ch, ok := m.out[name]; ok {
+		if ch, ok := out[name]; ok {
 			ch <- msg
 		} else {
 			m.SendError(fmt.Errorf("channel \"%s\" not found (message was: %#v)", name, msg))
 		}
-	}
-}
-
-func (m *Multicast) Close() {
-	m.Receiver.Close()
-
-	for _, ch := range m.out {
-		close(ch)
-	}
-}
-
-func (m *Multicast) AppendListeners(listeners map[types.ChanName]chan interface{}) {
-	if m.IsStarted {
-		m.Stop()
-		defer m.Start()
-	}
-
-	for name, ch := range listeners {
-		if _, ok := m.out[name]; ok {
-			m.SendError(fmt.Errorf("channel \"%s\" already exists", name))
-			continue
-		}
-		m.out[name] = ch
 	}
 }

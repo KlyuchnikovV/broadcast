@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-type Receiver struct {
+type Redirect struct {
 	*ErrorChannel
 
 	ctx       context.Context
@@ -14,19 +14,21 @@ type Receiver struct {
 	onMessage func(interface{})
 	IsStarted bool
 
-	in chan interface{}
+	in  chan interface{}
+	out map[ChanName]chan interface{}
 }
 
-func NewReceiver(ctx context.Context, errChan *ErrorChannel, from chan interface{}, onMsg func(interface{})) *Receiver {
-	return &Receiver{
+func NewRedirect(ctx context.Context, errChan *ErrorChannel, from chan interface{}, to map[ChanName]chan interface{}, onMsg func(interface{})) *Redirect {
+	return &Redirect{
 		in:           from,
+		out:          to,
 		ctx:          ctx,
 		onMessage:    onMsg,
 		ErrorChannel: errChan,
 	}
 }
 
-func (r *Receiver) Start() {
+func (r *Redirect) Start() {
 	if r.IsStarted {
 		r.SendError(fmt.Errorf("\"%T\" already started", *r))
 		return
@@ -63,7 +65,7 @@ func (r *Receiver) Start() {
 	}()
 }
 
-func (r *Receiver) Stop() {
+func (r *Redirect) Stop() {
 	if !r.IsStarted {
 		r.SendError(fmt.Errorf("\"%T\" already stopped", *r))
 		return
@@ -71,14 +73,19 @@ func (r *Receiver) Stop() {
 	r.cancel()
 }
 
-func (r *Receiver) Close() {
+func (r *Redirect) Close() {
 	if r.IsStarted {
 		r.Stop()
 	}
+
 	close(r.in)
+
+	for i := range r.out {
+		close(r.out[i])
+	}
 }
 
-func (r *Receiver) Send(data interface{}) {
+func (r *Redirect) Send(data interface{}) {
 	defer func() {
 		if err := recover(); err != nil {
 			r.SendError(err.(error))
@@ -86,4 +93,27 @@ func (r *Receiver) Send(data interface{}) {
 	}()
 
 	r.in <- data
+}
+
+func (r *Redirect) AppendListeners(listeners map[ChanName]chan interface{}) {
+	if r.IsStarted {
+		r.Stop()
+		defer r.Start()
+	}
+
+	for name := range listeners {
+		if _, ok := r.out[name]; ok {
+			r.SendError(fmt.Errorf("listener with name \"%s\" already exists", name))
+		} else {
+			r.out[name] = listeners[name]
+		}
+	}
+}
+
+func (r *Redirect) InputChan() chan interface{} {
+	return r.in
+}
+
+func (r *Redirect) OutputChan() map[ChanName]chan interface{} {
+	return r.out
 }

@@ -2,14 +2,13 @@ package broadcast
 
 import (
 	"context"
-	"fmt"
+	"strconv"
+
 	"github.com/KlyuchnikovV/broadcast/types"
 )
 
 type Broadcast struct {
-	types.Receiver
-
-	out []chan interface{}
+	types.Redirect
 }
 
 func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}, to ...chan interface{}) *Broadcast {
@@ -17,38 +16,30 @@ func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}
 		return nil
 	}
 
-	b := &Broadcast{out: to}
+	out := sliceToMap(0, to...)
 
-	b.Receiver = *types.NewReceiver(ctx, errChan, from, b.onMessage)
+	b := new(Broadcast)
+	b.Redirect = *types.NewRedirect(ctx, errChan, from, out, b.onMessage)
 
 	return b
 }
 
 func (b *Broadcast) onMessage(data interface{}) {
-	msg, ok := data.(types.Message)
-	if !ok {
-		b.SendError(fmt.Errorf("message \"%v\" wasn't of type \"%T\"", data, msg))
-		return
-	}
-
-	for _, ch := range b.out {
-		ch <- msg
-	}
-}
-
-func (b *Broadcast) Close() {
-	b.Receiver.Close()
-
-	for _, ch := range b.out {
-		close(ch)
+	for _, ch := range b.OutputChan() {
+		ch <- data
 	}
 }
 
 func (b *Broadcast) AppendListeners(listeners ...chan interface{}) {
-	if b.IsStarted {
-		b.Stop()
-		defer b.Start()
+	b.Redirect.AppendListeners(sliceToMap(len(b.OutputChan()), listeners...))
+}
+
+func sliceToMap(index int, channels ...chan interface{}) map[types.ChanName]chan interface{} {
+	out := make(map[types.ChanName]chan interface{})
+
+	for i := range channels {
+		out[types.ChanName(strconv.Itoa(index+i))] = channels[i]
 	}
 
-	b.out = append(b.out, listeners...)
+	return out
 }
