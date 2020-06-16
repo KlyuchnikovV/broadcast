@@ -2,7 +2,7 @@ package broadcast
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"sync"
 	"testing"
 
@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func initTestBroadcast(t *testing.T, outN int) (*Broadcast, chan error, context.CancelFunc, *sync.WaitGroup) {
+func initTestBroadcast(t *testing.T, outN int, withWg bool) (*Broadcast, chan error, context.CancelFunc, *sync.WaitGroup) {
 	var input = make(chan interface{})
 	var outputs = make([]chan interface{}, outN)
 	var err = make(chan error, 1000)
@@ -32,9 +32,10 @@ func initTestBroadcast(t *testing.T, outN int) (*Broadcast, chan error, context.
 				select {
 				case message, ok := <-ch:
 					assert.True(t, ok)
-					assert.Equal(t, i, message.(int))
-					fmt.Printf("\"%d\" got message \"%d\"\n", n, message.(int))
-					wg.Done()
+					log.Printf("\"%d\" got message \"%d\"\n", n, message.(int))
+					if withWg {
+						wg.Done()
+					}
 				case <-ctx.Done():
 					return
 				}
@@ -46,7 +47,7 @@ func initTestBroadcast(t *testing.T, outN int) (*Broadcast, chan error, context.
 
 func TestBroadcast(t *testing.T) {
 	var outN = 10
-	b, err, cancel, wg := initTestBroadcast(t, outN)
+	b, err, cancel, wg := initTestBroadcast(t, outN, true)
 	defer cancel()
 
 	b.Start()
@@ -62,5 +63,28 @@ func TestBroadcast(t *testing.T) {
 	assert.Empty(t, err)
 }
 
-// TODO: concurrency test
+func TestBroadcastConcurrency(t *testing.T) {
+	var outN = 10
+	b, err, cancel, _ := initTestBroadcast(t, outN, false)
+	defer cancel()
+
+	b.Start()
+
+	inWg := new(sync.WaitGroup)
+
+	inWg.Add(outN)
+	for i := 0; i < outN; i++ {
+		go func(i int) {
+			inWg.Done()
+			inWg.Wait()
+			b.Send(i)
+			log.Printf("Sended %d\n", i)
+		}(i)
+		assert.Empty(t, err)
+	}
+
+	assert.Empty(t, err)
+	b.Stop()
+}
+
 // TODO: benchmarks

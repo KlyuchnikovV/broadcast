@@ -11,7 +11,7 @@ import (
 type AnySource struct {
 	*types.Redirect
 
-	redirectors []*broadcast.Broadcast
+	redirs []*broadcast.Broadcast
 }
 
 func New(ctx context.Context, errChan *types.ErrorChannel, from []chan interface{}, to chan interface{}) *AnySource {
@@ -20,12 +20,13 @@ func New(ctx context.Context, errChan *types.ErrorChannel, from []chan interface
 	}
 
 	a := new(AnySource)
-	a.redirectors = make([]*broadcast.Broadcast, len(from))
+	a.redirs = make([]*broadcast.Broadcast, len(from))
 
+	// Making input channel capacity twice the amount of input channels.
 	inChan := make(chan interface{}, 2*len(from))
 
 	for i := range from {
-		a.redirectors[i] = broadcast.New(ctx, errChan, from[i], inChan)
+		a.redirs[i] = broadcast.New(ctx, errChan, from[i], inChan)
 	}
 
 	a.Redirect = types.NewRedirect(ctx, errChan, inChan, map[types.ChanName]chan interface{}{"0": to}, a.onMessage)
@@ -41,8 +42,8 @@ func (a *AnySource) onMessage(data interface{}) {
 
 func (a *AnySource) Start() {
 	a.Redirect.Start()
-	for i := range a.redirectors {
-		a.redirectors[i].Start()
+	for i := range a.redirs {
+		a.redirs[i].Start()
 	}
 }
 
@@ -51,8 +52,8 @@ func (a *AnySource) Stop() {
 		a.SendError(fmt.Errorf("\"%T\" already stopped", *a))
 		return
 	}
-	for i := range a.redirectors {
-		a.redirectors[i].Stop()
+	for i := range a.redirs {
+		a.redirs[i].Stop()
 	}
 	a.Redirect.Stop()
 }
@@ -62,8 +63,8 @@ func (a *AnySource) Close() {
 		a.Stop()
 	}
 	
-	for i := range a.redirectors {
-		a.redirectors[i].Close()
+	for i := range a.redirs {
+		a.redirs[i].Close()
 	}
 
 	a.Redirect.Close()
