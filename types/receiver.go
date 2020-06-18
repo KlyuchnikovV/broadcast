@@ -2,7 +2,6 @@ package types
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/KlyuchnikovV/chan_utils"
@@ -36,12 +35,12 @@ func (r *Redirect) Start() {
 		return
 	}
 
-	redirect, cancel := chan_utils.NewListener(r.ctx, r.onMessage, r.SendError)
+	redirect, cancel := chan_utils.NewListener(r.ctx, r.in, r.onMessage, r.SendError)
 
 	r.cancel = cancel
 	r.IsStarted = true
 
-	go redirect(r.in)
+	go redirect()
 }
 
 func (r *Redirect) Stop() {
@@ -97,8 +96,15 @@ func (r *Redirect) OutputChan() map[ChanName]chan interface{} {
 	return r.out
 }
 
+func (r *Redirect) GetChanListener(chanName ChanName, onMessage func(interface{})) (func(), context.CancelFunc) {
+	return chan_utils.NewListener(r.ctx, r.out[chanName], onMessage, r.SendError)
+}
 
-func (r *Redirect) GetChanListener() (func(chanName ChanName) interface{}, context.CancelFunc) {
-	listen, cancel := chan_utils.NewListener(r.ctx)
-
+func (r *Redirect) GetMessage(from ChanName) interface{} {
+	var result, err = chan_utils.GetMessage(r.ctx, r.out[from])
+	if err != nil {
+		r.SendError(err)
+		return nil
+	}
+	return result
 }
