@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/KlyuchnikovV/chan_utils"
 )
 
 type Redirect struct {
@@ -34,35 +36,12 @@ func (r *Redirect) Start() {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(r.ctx)
-	r.ctx = ctx
+	redirect, cancel := chan_utils.NewListener(r.ctx, r.onMessage, r.SendError)
+
 	r.cancel = cancel
 	r.IsStarted = true
 
-	go func() {
-		defer func() {
-			if data := recover(); data != nil {
-				r.SendError(data.(error))
-			}
-		}()
-
-		for {
-			select {
-			case msg, ok := <-r.in:
-				if !ok {
-					r.SendError(fmt.Errorf("input channel was closed before \"%T\" stopped listening", *r))
-					return
-				}
-				r.onMessage(msg)
-			case <-r.ctx.Done():
-				err := r.ctx.Err()
-				if err != nil && !errors.Is(err, context.Canceled) {
-					r.SendError(err)
-				}
-				return
-			}
-		}
-	}()
+	go redirect(r.in)
 }
 
 func (r *Redirect) Stop() {
@@ -116,4 +95,10 @@ func (r *Redirect) InputChan() chan interface{} {
 
 func (r *Redirect) OutputChan() map[ChanName]chan interface{} {
 	return r.out
+}
+
+
+func (r *Redirect) GetChanListener() (func(chanName ChanName) interface{}, context.CancelFunc) {
+	listen, cancel := chan_utils.NewListener(r.ctx)
+
 }

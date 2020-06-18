@@ -22,7 +22,8 @@ func New(ctx context.Context, errChan *types.ErrorChannel, from []chan interface
 	a := new(AnySource)
 	a.redirs = make([]*broadcast.Broadcast, len(from))
 
-	// Making input channel capacity twice the amount of input channels.
+	// Making input channel capacity twice the amount of input channels
+	// for unusual situations e.g. all channels send message at the same time.
 	inChan := make(chan interface{}, 2*len(from))
 
 	for i := range from {

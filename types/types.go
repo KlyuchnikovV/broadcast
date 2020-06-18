@@ -21,13 +21,13 @@ func NewErrorChannel(err chan error, mutex *sync.Mutex) *ErrorChannel {
 }
 
 func (e *ErrorChannel) SendError(err error) {
-	e.mutex.Lock()
 	e.err <- err
-	e.mutex.Unlock()
 }
 
 func (e *ErrorChannel) Close() {
-	e.mutex.Lock()
 	close(e.err)
-	e.mutex.Unlock()
+}
+
+func (e *ErrorChannel) GetError() error {
+	return <-e.err
 }
