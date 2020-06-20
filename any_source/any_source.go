@@ -14,30 +14,22 @@ type AnySource struct {
 	redirs []*broadcast.Broadcast
 }
 
-func New(ctx context.Context, errChan *types.ErrorChannel, from []chan interface{}, to chan interface{}) *AnySource {
-	if len(to) < 1 {
-		return nil
-	}
-
+func New(ctx context.Context, errChan *types.ErrorChannel, from []chan interface{}, to types.Listener) *AnySource {
 	a := new(AnySource)
 	a.redirs = make([]*broadcast.Broadcast, len(from))
 
-	// Making input channel capacity twice the amount of input channels
-	// for unusual situations e.g. all channels send message at the same time.
-	inChan := make(chan interface{}, 2*len(from))
-
 	for i := range from {
-		a.redirs[i] = broadcast.New(ctx, errChan, from[i], inChan)
+		a.redirs[i] = broadcast.New(ctx, errChan, from[i], to)
 	}
 
-	a.Redirect = types.NewRedirect(ctx, errChan, inChan, map[types.ChanName]chan interface{}{"0": to}, a.onMessage)
+	a.Redirect = types.NewRedirect(ctx, errChan, nil, map[types.ChanName]types.Listener{"0": to}, a.OnMessage)
 
 	return a
 }
 
-func (a *AnySource) onMessage(data interface{}) {
-	for _, ch := range a.OutputChan() {
-		ch <- data
+func (a *AnySource) OnMessage(data interface{}) {
+	for _, listener := range a.Listeners() {
+		listener.OnMessage(data)
 	}
 }
 
@@ -63,7 +55,7 @@ func (a *AnySource) Close() {
 	if a.IsStarted {
 		a.Stop()
 	}
-	
+
 	for i := range a.redirs {
 		a.redirs[i].Close()
 	}
@@ -71,6 +63,14 @@ func (a *AnySource) Close() {
 	a.Redirect.Close()
 }
 
-func (a *AnySource) AppendListeners(_ ...chan interface{}) {
-	a.SendError(fmt.Errorf("cannot append to \"%T\" listener (not allowed by design)", *a))
+func (a *AnySource) AppendListeners(listeners ...types.Listener) {
+	listener, ok := a.Listeners()["0"].(interface {
+		AppendListeners(...types.Listener)
+	})
+
+	if ok {
+		listener.AppendListeners(listeners...)
+	} else {
+		a.SendError(fmt.Errorf("cannot append to \"%T\" listener (not allowed)", *a))
+	}
 }

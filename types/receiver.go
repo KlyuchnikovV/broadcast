@@ -16,15 +16,15 @@ type Redirect struct {
 	IsStarted bool
 
 	in  chan interface{}
-	out map[ChanName]chan interface{}
+	out map[ChanName]Listener
 }
 
-func NewRedirect(ctx context.Context, errChan *ErrorChannel, from chan interface{}, to map[ChanName]chan interface{}, onMsg func(interface{})) *Redirect {
+func NewRedirect(ctx context.Context, errChan *ErrorChannel, from chan interface{}, to map[ChanName]Listener, onMessage func(interface{})) *Redirect {
 	return &Redirect{
 		in:           from,
 		out:          to,
 		ctx:          ctx,
-		onMessage:    onMsg,
+		onMessage:    onMessage,
 		ErrorChannel: errChan,
 	}
 }
@@ -32,6 +32,10 @@ func NewRedirect(ctx context.Context, errChan *ErrorChannel, from chan interface
 func (r *Redirect) Start() {
 	if r.IsStarted {
 		r.SendError(fmt.Errorf("\"%T\" already started", *r))
+		return
+	}
+
+	if r.in == nil {
 		return
 	}
 
@@ -48,6 +52,9 @@ func (r *Redirect) Stop() {
 		r.SendError(fmt.Errorf("\"%T\" already stopped", *r))
 		return
 	}
+	if r.in == nil {
+		return
+	}
 	r.cancel()
 }
 
@@ -55,12 +62,12 @@ func (r *Redirect) Close() {
 	if r.IsStarted {
 		r.Stop()
 	}
+	
+	if r.in == nil {
+		return
+	}
 
 	close(r.in)
-
-	for i := range r.out {
-		close(r.out[i])
-	}
 }
 
 func (r *Redirect) Send(data interface{}) {
@@ -73,7 +80,7 @@ func (r *Redirect) Send(data interface{}) {
 	r.in <- data
 }
 
-func (r *Redirect) AppendListeners(listeners map[ChanName]chan interface{}) {
+func (r *Redirect) AppendListeners(listeners map[ChanName]Listener) {
 	if r.IsStarted {
 		r.Stop()
 		defer r.Start()
@@ -88,23 +95,10 @@ func (r *Redirect) AppendListeners(listeners map[ChanName]chan interface{}) {
 	}
 }
 
-func (r *Redirect) InputChan() chan interface{} {
+func (r *Redirect) Channel() chan interface{} {
 	return r.in
 }
 
-func (r *Redirect) OutputChan() map[ChanName]chan interface{} {
+func (r *Redirect) Listeners() map[ChanName]Listener {
 	return r.out
-}
-
-func (r *Redirect) GetChanListener(chanName ChanName, onMessage func(interface{})) (func(), context.CancelFunc) {
-	return chan_utils.NewListener(r.ctx, r.out[chanName], onMessage, r.SendError)
-}
-
-func (r *Redirect) GetMessage(from ChanName) interface{} {
-	var result, err = chan_utils.GetMessage(r.ctx, r.out[from])
-	if err != nil {
-		r.SendError(err)
-		return nil
-	}
-	return result
 }

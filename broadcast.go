@@ -11,7 +11,7 @@ type Broadcast struct {
 	types.Redirect
 }
 
-func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}, to ...chan interface{}) *Broadcast {
+func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}, to ...types.Listener) *Broadcast {
 	if len(to) < 1 {
 		return nil
 	}
@@ -19,26 +19,39 @@ func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}
 	out := sliceToMap(0, to...)
 
 	b := new(Broadcast)
-	b.Redirect = *types.NewRedirect(ctx, errChan, from, out, b.onMessage)
+	b.Redirect = *types.NewRedirect(ctx, errChan, from, out, b.OnMessage)
 
 	return b
 }
 
-func (b *Broadcast) onMessage(data interface{}) {
-	for _, ch := range b.OutputChan() {
-		ch <- data
+func NewWithoutChan(ctx context.Context, errChan *types.ErrorChannel, to ...types.Listener) *Broadcast {
+	if len(to) < 1 {
+		return nil
+	}
+
+	out := sliceToMap(0, to...)
+
+	b := new(Broadcast)
+	b.Redirect = *types.NewRedirect(ctx, errChan, nil, out, b.OnMessage)
+
+	return b
+}
+
+func (b *Broadcast) OnMessage(data interface{}) {
+	for _, listener := range b.Listeners() {
+		listener.OnMessage(data)
 	}
 }
 
-func (b *Broadcast) AppendListeners(listeners ...chan interface{}) {
-	b.Redirect.AppendListeners(sliceToMap(len(b.OutputChan()), listeners...))
+func (b *Broadcast) AppendListeners(listeners ...types.Listener) {
+	b.Redirect.AppendListeners(sliceToMap(len(b.Listeners()), listeners...))
 }
 
-func sliceToMap(index int, channels ...chan interface{}) map[types.ChanName]chan interface{} {
-	out := make(map[types.ChanName]chan interface{})
+func sliceToMap(index int, listeners ...types.Listener) map[types.ChanName]types.Listener {
+	out := make(map[types.ChanName]types.Listener)
 
-	for i := range channels {
-		out[types.ChanName(strconv.Itoa(index+i))] = channels[i]
+	for i := range listeners {
+		out[types.ChanName(strconv.Itoa(index+i))] = listeners[i]
 	}
 
 	return out
