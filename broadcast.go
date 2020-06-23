@@ -24,19 +24,6 @@ func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}
 	return b
 }
 
-func NewWithoutChan(ctx context.Context, errChan *types.ErrorChannel, to ...types.Listener) *Broadcast {
-	if len(to) < 1 {
-		return nil
-	}
-
-	out := sliceToMap(0, to...)
-
-	b := new(Broadcast)
-	b.Redirect = *types.NewRedirect(ctx, errChan, nil, out, b.OnMessage)
-
-	return b
-}
-
 func (b *Broadcast) OnMessage(data interface{}) {
 	for _, listener := range b.Listeners() {
 		listener.OnMessage(data)

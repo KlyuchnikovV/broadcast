@@ -23,17 +23,6 @@ func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}
 	return m
 }
 
-func NewWithoutChan(ctx context.Context, errChan *types.ErrorChannel, to map[types.ChanName]types.Listener) *Multicast {
-	if len(to) < 1 {
-		return nil
-	}
-
-	b := new(Multicast)
-	b.Redirect = *types.NewRedirect(ctx, errChan, nil, to, b.OnMessage)
-
-	return b
-}
-
 func (m *Multicast) OnMessage(data interface{}) {
 	msg, ok := data.(types.DirectedMessage)
 	if !ok {
