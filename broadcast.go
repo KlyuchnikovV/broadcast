@@ -2,44 +2,32 @@ package broadcast
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/KlyuchnikovV/broadcast/types"
 )
 
 type Broadcast struct {
-	types.Redirect
+	types.Receiver
+	listeners []types.Listener
 }
 
-func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}, to ...types.Listener) *Broadcast {
+func New(ctx context.Context, errChan types.ErrorChannel, bufferSize int, to ...types.Listener) *Broadcast {
 	if len(to) < 1 {
 		return nil
 	}
-
-	out := sliceToMap(0, to...)
-
-	b := new(Broadcast)
-	b.Redirect = *types.NewRedirect(ctx, errChan, from, out, b.OnMessage)
-
-	return b
-}
-
-func (b *Broadcast) OnMessage(data interface{}) {
-	for _, listener := range b.Listeners() {
-		listener.OnMessage(data)
+ 
+	return &Broadcast{
+		Receiver: *types.NewReceiver(ctx, errChan, types.ChannelCapacity(bufferSize)),
+		listeners: to,
 	}
 }
 
-func (b *Broadcast) AppendListeners(listeners ...types.Listener) {
-	b.Redirect.AppendListeners(sliceToMap(len(b.Listeners()), listeners...))
+func (b *Broadcast) Start() {
+	b.Receiver.Start(b.Send)
 }
 
-func sliceToMap(index int, listeners ...types.Listener) map[types.ChanName]types.Listener {
-	out := make(map[types.ChanName]types.Listener)
-
-	for i := range listeners {
-		out[types.ChanName(strconv.Itoa(index+i))] = listeners[i]
+func (b *Broadcast) Send(data interface{}) {
+	for _, listener := range b.listeners {
+		listener(data)
 	}
-
-	return out
 }

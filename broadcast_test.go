@@ -2,6 +2,7 @@ package broadcast
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"testing"
@@ -10,51 +11,58 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func initTestBroadcast(t *testing.T, outN int, withWg bool) (*Broadcast, chan error, context.CancelFunc, *sync.WaitGroup) {
-	var input = make(chan interface{})
-	var outputs = make([]chan interface{}, outN)
-	var err = make(chan error, 1000)
-	var errChan = types.NewErrorChannel(err, &sync.Mutex{})
+var cancel context.CancelFunc
 
-	for i := range outputs {
-		outputs[i] = make(chan interface{})
+type simpleListener int
+
+func (s simpleListener) OnMessage(data interface{}) {
+	msg, ok := data.(message)
+	if !ok {
+		cancel()
+		panic(fmt.Errorf("message not of type %T", msg))
+	}
+	log.Printf("\"%d\" got message \"%d\"\n", s, msg.data.(int))
+	if msg.withWg {
+		msg.wg.Done()
+	}
+}
+
+type message struct {
+	wg     *sync.WaitGroup
+	withWg bool
+	data   interface{}
+}
+
+func initTestBroadcast(t *testing.T, outN int, withWg bool) (*Broadcast, *types.ErrorChannel, *sync.WaitGroup) {
+	var listeners = make([]types.Listener, outN)
+	var errChan = types.NewErrorChannel(1)
+
+	ctx, cancellation := context.WithCancel(context.Background())
+	cancel = cancellation
+
+	for i := range listeners {
+		listeners[i] = simpleListener(i).OnMessage
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	b := New(ctx, errChan, input, outputs...)
-
+	b := New(ctx, errChan, 1, listeners...)
 	wg := new(sync.WaitGroup)
-
-	for i := range outputs {
-		go func(n int, ch chan interface{}) {
-			for i := 0; ; i++ {
-				select {
-				case message, ok := <-ch:
-					assert.True(t, ok)
-					log.Printf("\"%d\" got message \"%d\"\n", n, message.(int))
-					if withWg {
-						wg.Done()
-					}
-				case <-ctx.Done():
-					return
-				}
-			}
-		}(i, outputs[i])
-	}
-	return b, err, cancel, wg
+	return b, errChan, wg
 }
 
 func TestBroadcast(t *testing.T) {
 	var outN = 10
-	b, err, cancel, wg := initTestBroadcast(t, outN, true)
+	b, err, wg := initTestBroadcast(t, outN, true)
 	defer cancel()
 
 	b.Start()
 
 	for i := 0; i < 1000; i++ {
 		wg.Add(outN)
-		b.Send(i)
+		b.Send(message{
+			wg:     wg,
+			withWg: true,
+			data:   i,
+		})
 		wg.Wait()
 		assert.Empty(t, err)
 	}
@@ -65,7 +73,7 @@ func TestBroadcast(t *testing.T) {
 
 func TestBroadcastConcurrency(t *testing.T) {
 	var outN = 10
-	b, err, cancel, _ := initTestBroadcast(t, outN, false)
+	b, err, _ := initTestBroadcast(t, outN, false)
 	defer cancel()
 
 	b.Start()
@@ -77,9 +85,12 @@ func TestBroadcastConcurrency(t *testing.T) {
 		go func(i int) {
 			inWg.Done()
 			inWg.Wait()
-			b.Send(i)
+			b.Send(message{
+				data:   i,
+			})
 			log.Printf("Sended %d\n", i)
 		}(i)
+		
 		assert.Empty(t, err)
 	}
 
@@ -87,4 +98,3 @@ func TestBroadcastConcurrency(t *testing.T) {
 	b.Stop()
 }
 
-// TODO: benchmarks

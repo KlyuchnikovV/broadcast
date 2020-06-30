@@ -8,43 +8,48 @@ import (
 )
 
 type Multicast struct {
-	types.Redirect
+	types.Receiver
+
+	listeners map[types.ChanName]types.Listener
 }
 
-func New(ctx context.Context, errChan *types.ErrorChannel, from chan interface{}, to map[types.ChanName]types.Listener) *Multicast {
+func New(ctx context.Context, errChan types.ErrorChannel, bufferSize int, to map[types.ChanName]types.Listener) *Multicast {
 	if len(to) < 1 {
 		return nil
 	}
 
-	m := new(Multicast)
-
-	m.Redirect = *types.NewRedirect(ctx, errChan, from, to, m.OnMessage)
-
-	return m
+	return &Multicast{
+		Receiver:  *types.NewReceiver(ctx, errChan, types.ChannelCapacity(bufferSize)),
+		listeners: to,
+	}
 }
 
-func (m *Multicast) OnMessage(data interface{}) {
+func (m *Multicast) Start() {
+	m.Receiver.Start(m.Send)
+}
+
+func (m *Multicast) Send(data interface{}) {
 	msg, ok := data.(types.DirectedMessage)
 	if !ok {
 		m.SendError(fmt.Errorf("message \"%v\" wasn't of type \"%T\"", data, msg))
 		return
 	}
 
-	out := m.Listeners()
-
 	names := msg.GetNames()
-	if len(names) != 0 {
-		for _, name := range names {
-			if listener, ok := out[name]; ok {
-				listener.OnMessage(data)
-			} else {
-				m.SendError(fmt.Errorf("channel \"%s\" not found (message was: %#v)", name, msg))
-			}
+
+	if len(names) == 0 {
+		for _, listener := range m.listeners {
+			listener(data)
 		}
-	} else {
-		// No names provided -> sending to all
-		for _, listener := range out {
-			listener.OnMessage(data)
+		return
+	}
+
+	for _, name := range names {
+		if listener, ok := m.listeners[name]; ok {
+			listener(data)
+			continue
 		}
+
+		m.SendError(fmt.Errorf("channel \"%s\" not found (message was: %#v)", name, msg))
 	}
 }

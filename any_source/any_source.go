@@ -9,68 +9,67 @@ import (
 )
 
 type AnySource struct {
-	*types.Redirect
-
-	redirs []*broadcast.Broadcast
+	*types.ErrorChannel
+	redirectors map[types.ChanName]*broadcast.Broadcast
 }
 
-func New(ctx context.Context, errChan *types.ErrorChannel, from []chan interface{}, to types.Listener) *AnySource {
-	a := new(AnySource)
-	a.redirs = make([]*broadcast.Broadcast, len(from))
+func New(ctx context.Context, errChan types.ErrorChannel, bufferSizes map[types.ChanName]int, to types.Listener) *AnySource {
+	redirectors := make(map[types.ChanName]*broadcast.Broadcast, len(bufferSizes))
 
-	for i := range from {
-		a.redirs[i] = broadcast.New(ctx, errChan, from[i], to)
+	for i, cap := range bufferSizes {
+		redirectors[i] = broadcast.New(ctx, errChan, cap, to)
 	}
 
-	a.Redirect = types.NewRedirect(ctx, errChan, nil, map[types.ChanName]types.Listener{"0": to}, a.OnMessage)
-
-	return a
-}
-
-func (a *AnySource) OnMessage(data interface{}) {
-	for _, listener := range a.Listeners() {
-		listener.OnMessage(data)
+	return &AnySource{
+		redirectors:  redirectors,
+		ErrorChannel: errChan,
 	}
 }
 
 func (a *AnySource) Start() {
-	a.Redirect.Start()
-	for i := range a.redirs {
-		a.redirs[i].Start()
+	for i := range a.redirectors {
+		a.redirectors[i].Start()
 	}
 }
 
 func (a *AnySource) Stop() {
-	if !a.IsStarted {
-		a.SendError(fmt.Errorf("\"%T\" already stopped", *a))
-		return
+	for i := range a.redirectors {
+		a.redirectors[i].Stop()
 	}
-	for i := range a.redirs {
-		a.redirs[i].Stop()
-	}
-	a.Redirect.Stop()
 }
 
 func (a *AnySource) Close() {
-	if a.IsStarted {
-		a.Stop()
+	for i := range a.redirectors {
+		a.redirectors[i].Close()
 	}
-
-	for i := range a.redirs {
-		a.redirs[i].Close()
-	}
-
-	a.Redirect.Close()
 }
 
-func (a *AnySource) AppendListeners(listeners ...types.Listener) {
-	listener, ok := a.Listeners()["0"].(interface {
-		AppendListeners(...types.Listener)
-	})
-
-	if ok {
-		listener.AppendListeners(listeners...)
+func (a *AnySource) GetChannels(names... types.ChanName) map[types.ChanName]chan interface{} {
+	var result map[types.ChanName]chan interface{}
+	
+	if len(names) == 0 {
+		for name, b := range a.redirectors {
+			result[name] = b.GetChan()
+		}
 	} else {
-		a.SendError(fmt.Errorf("cannot append to \"%T\" listener (not allowed)", *a))
+		for _, name := range names {
+			b, ok := a.redirectors[name]
+			if !ok {
+				a.SendError(fmt.Errorf("channel \"%s\" not found", name))
+				continue
+			}
+			result[name] = b.GetChan()
+		}
 	}
+
+	return result
+}
+
+func (a *AnySource) Send(name types.ChanName, data interface{}) {
+	b, ok := a.redirectors[name]
+	if !ok {
+		a.SendError(fmt.Errorf("channel \"%s\" not found", name))
+		return
+	}
+	b.Send(data)
 }

@@ -3,101 +3,84 @@ package types
 import (
 	"context"
 	"fmt"
+
+	"github.com/KlyuchnikovV/chan_utils"
 )
 
-type Redirect struct {
-	*ErrorChannel
+type ChannelCapacity int
 
-	ctx       context.Context
-	cancel    context.CancelFunc
-	onMessage func(interface{})
-	IsStarted bool
+const NoChannel ChannelCapacity = -1
 
-	in  SenderService
-	out map[ChanName]Listener
+type Receiver struct {
+	ErrorChannel
+
+	ctx context.Context
+	// Also acts as IsStarted flag
+	cancel context.CancelFunc
+
+	in chan interface{}
 }
 
-func NewRedirect(ctx context.Context, errChan *ErrorChannel, from chan interface{}, to map[ChanName]Listener, onMessage func(interface{})) *Redirect {
-	var in SenderService = emptyService(from)
-
-	if from != nil {
-		in = channelService(from)
+func NewReceiver(ctx context.Context, errChan ErrorChannel, inChanCapacity ChannelCapacity) *Receiver {
+	var in chan interface{} = nil
+	if inChanCapacity >= 0 {
+		in = make(chan interface{}, inChanCapacity)
 	}
 
-	return &Redirect{
+	return &Receiver{
 		in:           in,
-		out:          to,
 		ctx:          ctx,
-		onMessage:    onMessage,
 		ErrorChannel: errChan,
 	}
 }
 
-func (r *Redirect) Start() {
-	if r.IsStarted {
+func (r *Receiver) Start(onMessage func(interface{})) {
+	if r.IsStarted() {
 		r.SendError(fmt.Errorf("\"%T\" already started", *r))
 		return
 	}
 
-	r.cancel = r.in.Start(r.ctx, r.onMessage, r.SendError)
-	r.IsStarted = true
+	receive, cancel := chan_utils.NewListener(r.ctx, r.in, onMessage, r.SendError)
+
+	go receive()
+
+	r.cancel = cancel
 }
 
-func (r *Redirect) Stop() {
-	if !r.IsStarted {
+func (r *Receiver) Stop() {
+	if !r.IsStarted() {
 		r.SendError(fmt.Errorf("\"%T\" already stopped", *r))
 		return
 	}
-	if r.cancel != nil {
-		r.cancel()
-	}
+
+	r.cancel()
+	r.cancel = nil
 }
 
-func (r *Redirect) AppendListeners(listeners map[ChanName]Listener) {
-	if r.IsStarted {
-		r.Stop()
-		defer r.Start()
-	}
-
-	for name := range listeners {
-		if _, ok := r.out[name]; ok {
-			r.SendError(fmt.Errorf("listener with name \"%s\" already exists", name))
-		} else {
-			r.out[name] = listeners[name]
-		}
-	}
-}
-
-func (r *Redirect) Listeners() map[ChanName]Listener {
-	return r.out
-}
-
-func (r *Redirect) Send(data interface{}) {
-	defer func() {
-		if err := recover(); err != nil {
-			r.SendError(err.(error))
-		}
-	}()
-
-	r.in.GetChannel() <- data
-}
-
-func (r *Redirect) GetChannel() chan interface{} {
-	return r.in.GetChannel()
-}
-
-func (r *Redirect) Close() {
-	if r.IsStarted {
+func (r *Receiver) Close() {
+	if r.IsStarted() {
 		r.Stop()
 	}
-
-	if r.in == nil {
-		return
-	}
-
-	r.in.Close()
+	close(r.in)
 }
 
-func (r *Redirect) TransmitTo(name ChanName, listener Listener) {
-	r.AppendListeners(map[ChanName]Listener{name: listener})
+func (r *Receiver) Receive() interface{} {
+	if r.in != nil {
+		return <-r.in
+	}
+	return nil
+}
+
+func (r *Receiver) Send(data interface{}) {
+	if r.in != nil {
+		r.in <- data
+	}
+}
+
+func (r *Receiver) IsStarted() bool {
+	return r.cancel != nil
+}
+
+func (r *Receiver) GetChan() chan interface{} {
+	return r.in
 }
