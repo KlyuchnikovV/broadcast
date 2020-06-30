@@ -33,7 +33,7 @@ type message struct {
 	data   interface{}
 }
 
-func initTestBroadcast(t *testing.T, outN int, withWg bool) (*Broadcast, *types.ErrorChannel, *sync.WaitGroup) {
+func initTestBroadcast(t *testing.T, outN int, withWg bool) (*Broadcast, types.ErrorChannel, *sync.WaitGroup) {
 	var listeners = make([]types.Listener, outN)
 	var errChan = types.NewErrorChannel(1)
 

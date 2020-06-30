@@ -40,7 +40,7 @@ func (d *directMessage) GetNames() []types.ChanName {
 	return d.names
 }
 
-func initTestMulticast(t *testing.T, outN int) (*Multicast, *types.ErrorChannel, *sync.WaitGroup) {
+func initTestMulticast(t *testing.T, outN int) (*Multicast, types.ErrorChannel, *sync.WaitGroup) {
 	var outputs = make(map[types.ChanName]types.Listener)
 	var errChan = types.NewErrorChannel(1)
 

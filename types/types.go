@@ -10,15 +10,12 @@ type DirectedMessage interface {
 
 type ErrorChannel chan error
 
-func NewErrorChannel(capacity int) *ErrorChannel {
-	var result ErrorChannel
-
+func NewErrorChannel(capacity int) ErrorChannel {
 	if capacity < 0 {
 		capacity = 0
 	}
-	
-	result = make(chan error, capacity)
-	return &result
+
+	return make(chan error, capacity)
 }
 
 func (e ErrorChannel) SendError(err error) {

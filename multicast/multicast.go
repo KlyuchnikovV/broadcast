@@ -53,3 +53,11 @@ func (m *Multicast) Send(data interface{}) {
 		m.SendError(fmt.Errorf("channel \"%s\" not found (message was: %#v)", name, msg))
 	}
 }
+
+func (m *Multicast) AddListener(name types.ChanName, listener types.Listener) {
+	if _, ok := m.listeners[name]; ok {
+		m.SendError(fmt.Errorf("channel \"%s\" already exists", name))
+	} else {
+		m.listeners[name] = listener
+	}
+}

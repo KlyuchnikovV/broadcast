@@ -25,5 +25,5 @@ func TestAnySourceWithBroadcast(t *testing.T) {
 	a.Send("a", "a")
 	a.Send("b", "b")
 
-	assert.Empty(t, *err)
+	assert.Empty(t, err)
 }

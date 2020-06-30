@@ -9,7 +9,7 @@ import (
 )
 
 type AnySource struct {
-	*types.ErrorChannel
+	types.ErrorChannel
 	redirectors map[types.ChanName]*broadcast.Broadcast
 }
 
