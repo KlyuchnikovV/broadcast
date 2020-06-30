@@ -12,12 +12,8 @@ type Broadcast struct {
 }
 
 func New(ctx context.Context, errChan types.ErrorChannel, bufferSize int, to ...types.Listener) *Broadcast {
-	if len(to) < 1 {
-		return nil
-	}
-
 	return &Broadcast{
-		Receiver: *types.NewReceiver(ctx, errChan, types.ChannelCapacity(bufferSize)),
+		Receiver:  *types.NewReceiver(ctx, errChan, types.ChannelCapacity(bufferSize)),
 		listeners: to,
 	}
 }
